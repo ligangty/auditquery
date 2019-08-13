@@ -69,6 +69,7 @@
                             <descriptors>
                                 <descriptor>src/main/assembly/launcher-jar.xml</descriptor>
                             </descriptors>
+                            <tarLongFileMode>posix</tarLongFileMode>
                         </configuration>
                     </execution>
                     <execution>
@@ -81,6 +82,7 @@
                             <descriptors>
                                 <descriptor>src/main/assembly/launcher.xml</descriptor>
                             </descriptors>
+                            <tarLongFileMode>posix</tarLongFileMode>
                             <appendAssemblyId>false</appendAssemblyId>
                         </configuration>
                     </execution>
