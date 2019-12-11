@@ -42,7 +42,10 @@ import javax.inject.Inject;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,7 +53,9 @@ import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @ApplicationScoped
 public class ContentTrackingController
@@ -111,7 +116,7 @@ public class ContentTrackingController
 
             Map<String, List<FileEvent>> storageEventsMap = queryStorageEventsFunction.apply( trackingSummary );
 
-            trackedContentEntryDTOS = fileEvents.stream()
+            trackedContentEntryDTOS = reduceEntryDTOs( fileEvents.stream()
                                                 .map( fileEvent -> eventToBasicEntryFunction.apply( fileEvent ) )
                                                 .map( entryDTO -> {
                                                     List<FileEvent> storageEventList =
@@ -138,14 +143,12 @@ public class ContentTrackingController
 
                                                     }
                                                     return entryDTO;
-                                                } )
-                                                .collect( Collectors.toSet() );
+                                                } ) );
         }
         else
         {
-            trackedContentEntryDTOS = fileEvents.stream()
-                                                .map( fileEvent -> eventToBasicEntryFunction.apply( fileEvent ) )
-                                                .collect( Collectors.toSet() );
+            trackedContentEntryDTOS = reduceEntryDTOs( fileEvents.stream()
+                                                .map( fileEvent -> eventToBasicEntryFunction.apply( fileEvent ) ) );
         }
 
         return trackedContentEntryDTOS;
@@ -174,50 +177,48 @@ public class ContentTrackingController
                 logger.info( "Query all the file access events of the tracking id: {}", trackingID );
                 List<FileEvent> fileAccessEventList = queryFileEvents( trackingID, "ACCESS" );
 
-                Set<TrackedContentEntryDTO> downloads = fileAccessEventList.stream()
-                                                                           .map( accessEvent -> eventToBasicEntryFunction
-                                                                                           .apply(
-                                                                                           accessEvent ) )
-                                                                           .map( entryDTO -> {
-                                                                               String checksum = entryDTO.getSha256();
+                Set<TrackedContentEntryDTO> downloads = reduceEntryDTOs( fileAccessEventList.stream()
+                                   .map( accessEvent -> eventToBasicEntryFunction
+                                                   .apply(
+                                                   accessEvent ) )
+                                   .map( entryDTO -> {
+                                       String checksum = entryDTO.getSha256();
 
-                                                                               List<FileEvent> storageEventList =
-                                                                                               storageEventsMap.get(
-                                                                                                               checksum );
+                                       List<FileEvent> storageEventList =
+                                                       storageEventsMap.get(
+                                                                       checksum );
 
-                                                                               if ( storageEventList!= null && !storageEventList.isEmpty() )
-                                                                               {
-                                                                                   FileEvent first = minEventFunction.apply(
-                                                                                                   storageEventList );
-                                                                                   FileEvent last = maxEventFunction.apply(
-                                                                                                   storageEventList );
+                                       if ( storageEventList!= null && !storageEventList.isEmpty() )
+                                       {
+                                           FileEvent first = minEventFunction.apply(
+                                                           storageEventList );
+                                           FileEvent last = maxEventFunction.apply(
+                                                           storageEventList );
 
-                                                                                   try
-                                                                                   {
-                                                                                       if ( config.getIndyUrl() != null )
-                                                                                       {
-                                                                                           entryDTO.setLocalUrl( UrlUtils.buildUrl( config.getIndyUrl(), first.getTargetPath() ) );
-                                                                                       }
-                                                                                       if ( last.getSourceLocation() != null )
-                                                                                       {
-                                                                                           entryDTO.setOriginUrl( UrlUtils.buildUrl( last.getSourceLocation(), last.getSourcePath() ) );
-                                                                                       }
-                                                                                   }
-                                                                                   catch ( MalformedURLException e )
-                                                                                   {
-                                                                                       logger.error( "Cannot format URL. Reason: {}", e.getMessage(), e );
-                                                                                   }
-                                                                               }
-                                                                               return entryDTO;
-                                                                           } )
-                                                                           .collect( Collectors.toSet() );
+                                           try
+                                           {
+                                               if ( config.getIndyUrl() != null )
+                                               {
+                                                   entryDTO.setLocalUrl( UrlUtils.buildUrl( config.getIndyUrl(), first.getTargetPath() ) );
+                                               }
+                                               if ( last.getSourceLocation() != null )
+                                               {
+                                                   entryDTO.setOriginUrl( UrlUtils.buildUrl( last.getSourceLocation(), last.getSourcePath() ) );
+                                               }
+                                           }
+                                           catch ( MalformedURLException e )
+                                           {
+                                               logger.error( "Cannot format URL. Reason: {}", e.getMessage(), e );
+                                           }
+                                       }
+                                       return entryDTO;
+                                   } ) );
 
                 List<FileEvent> fileStorageEvents = new ArrayList<>();
                 storageEventsMap.values().stream().forEach( subList -> fileStorageEvents.addAll( subList ) );
-                Set<TrackedContentEntryDTO> uploads = fileStorageEvents.stream()
+                Set<TrackedContentEntryDTO> uploads = reduceEntryDTOs( fileStorageEvents.stream()
                                                                        .map( storageEvent -> eventToBasicEntryFunction.apply(
-                                                                                       storageEvent ) )
-                                                                       .collect( Collectors.toSet() );
+                                                                                       storageEvent ) ) );
 
                 TrackedContentDTO trackedContentDTO = new TrackedContentDTO( trackingID, uploads, downloads );
 
@@ -232,6 +233,24 @@ public class ContentTrackingController
 
         olapService.submit( callableTask );
 
+    }
+
+    private Set<TrackedContentEntryDTO> reduceEntryDTOs( Stream<TrackedContentEntryDTO> stream )
+    {
+        Map<TrackedContentEntryDTO, TrackedContentEntryDTO> existingDtos = new HashMap<>();
+        stream                                   .forEach( dto->{
+            TrackedContentEntryDTO existing = existingDtos.get(dto);
+            if ( existing != null )
+            {
+                existing.merge( dto );
+            }
+            else
+            {
+                existingDtos.put( dto, dto );
+            }
+        } );
+
+        return new HashSet<>( existingDtos.values() );
     }
 
     private TrackingSummary getTrackingSummary( String trackingID ) throws Exception
@@ -361,6 +380,7 @@ public class ContentTrackingController
         entryDTO.setMd5( fileEvent.getMd5() );
         entryDTO.setSha1( fileEvent.getSha1() );
         entryDTO.setSize( fileEvent.getSize() );
+        entryDTO.setTimestamps( new HashSet<> ( Collections.singleton( fileEvent.getTimestamp().getTime() ) ) );
         try
         {
             if ( config.getIndyUrl() != null )

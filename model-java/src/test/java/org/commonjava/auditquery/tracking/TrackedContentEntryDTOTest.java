@@ -18,6 +18,8 @@ package org.commonjava.auditquery.tracking;
 import org.commonjava.auditquery.tracking.dto.TrackedContentEntryDTO;
 import org.junit.Test;
 
+import java.util.Collections;
+
 import static junit.framework.Assert.assertEquals;
 
 public class TrackedContentEntryDTOTest extends AuditQueryModelTest
@@ -35,6 +37,7 @@ public class TrackedContentEntryDTOTest extends AuditQueryModelTest
         output.setSha256( "f8e5dacc1982c045a48b93e09e9b0beb6c820981dfaf5cf1578ac8806ea0e036" );
         output.setLocalUrl( "http://local.com/org/jboss/test/test-01.pom" );
         output.setOriginUrl( "http://remote.com/org/jboss/test/test-01.pom" );
+        output.setTimestamps( Collections.singleton( System.currentTimeMillis() ) );
 
         TrackedContentEntryDTO input = read( output );
 
@@ -46,6 +49,7 @@ public class TrackedContentEntryDTOTest extends AuditQueryModelTest
         assertEquals(input.getSha1(), output.getSha1());
         assertEquals(input.getSha256(), output.getSha256());
         assertEquals(input.getStoreKey(), output.getStoreKey());
+        assertEquals( input.getTimestamps(), output.getTimestamps() );
 
     }
 
